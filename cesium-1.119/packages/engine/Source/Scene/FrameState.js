@@ -104,6 +104,8 @@ function FrameState(context, creditDisplay, jobScheduler) {
    */
   this.time = undefined;
 
+  this.timeSinceSceneLoad = undefined;
+
   /**
    * The job scheduler.
    *

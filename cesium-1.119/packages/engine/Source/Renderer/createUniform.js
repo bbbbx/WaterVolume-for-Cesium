@@ -210,6 +210,9 @@ UniformSampler.prototype.set = function () {
   gl.activeTexture(gl.TEXTURE0 + this.textureUnitIndex);
 
   const v = this.value;
+  if (!v) {
+    debugger;
+  }
   gl.bindTexture(v._target, v._texture);
 };
 

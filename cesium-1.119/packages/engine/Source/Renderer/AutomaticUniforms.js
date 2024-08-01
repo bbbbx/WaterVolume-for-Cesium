@@ -46,6 +46,51 @@ AutomaticUniform.prototype.getDeclaration = function (name) {
  * @private
  */
 const AutomaticUniforms = {
+  czm_globeAndOpaqueColorTexture: new AutomaticUniform({
+    size: 1,
+    datatype: WebGLConstants.SAMPLER_2D,
+    getValue: function (uniformState) {
+      return uniformState.globeAndOpaqueColorTexture;
+    },
+  }),
+  czm_globeAndOpaquePackedDepthTexture: new AutomaticUniform({
+    size: 1,
+    datatype: WebGLConstants.SAMPLER_2D,
+    getValue: function (uniformState) {
+      return uniformState.globeAndOpaquePackedDepthTexture;
+    },
+  }),
+  czm_waterVolumesFrontFaceDepthTexture: new AutomaticUniform({
+    size: 1,
+    datatype: WebGLConstants.SAMPLER_2D,
+    getValue: function (uniformState) {
+      return uniformState.waterVolumesFrontFaceDepthTexture;
+    },
+  }),
+  czm_waterVolumesBackFaceDepthTexture: new AutomaticUniform({
+    size: 1,
+    datatype: WebGLConstants.SAMPLER_2D,
+    getValue: function (uniformState) {
+      return uniformState.waterVolumesBackFaceDepthTexture;
+    },
+  }),
+
+  czm_skyCaptureCubeMap: new AutomaticUniform({
+    size: 1,
+    datatype: WebGLConstants.SAMPLER_CUBE,
+    getValue: function (uniformState) {
+      return uniformState.skyCaptureCubeMap;
+    },
+  }),
+
+  czm_timeSinceSceneLoad: new AutomaticUniform({
+    size: 1,
+    datatype: WebGLConstants.FLOAT,
+    getValue: function (uniformState) {
+      return uniformState.frameState.timeSinceSceneLoad;
+    },
+  }),
+
   /**
    * An automatic GLSL uniform containing the viewport's <code>x</code>, <code>y</code>, <code>width</code>,
    * and <code>height</code> properties in an <code>vec4</code>'s <code>x</code>, <code>y</code>, <code>z</code>,

@@ -18,7 +18,9 @@ import PickDepthFramebuffer from "./PickDepthFramebuffer.js";
 import PickFramebuffer from "./PickFramebuffer.js";
 import SceneFramebuffer from "./SceneFramebuffer.js";
 import SceneMode from "./SceneMode.js";
+import SceneTextures from "./SceneTextures.js";
 import ShadowMap from "./ShadowMap.js";
+import SkyCapture from "./SkyCapture.js";
 import TranslucentTileClassification from "./TranslucentTileClassification.js";
 
 function CommandExtent() {
@@ -56,6 +58,8 @@ function View(scene, camera, viewport) {
   this.pickFramebuffer = new PickFramebuffer(context);
   this.pickDepthFramebuffer = new PickDepthFramebuffer();
   this.sceneFramebuffer = new SceneFramebuffer();
+  this.sceneTextures = new SceneTextures();
+  this.skyCapture = new SkyCapture();
   this.globeDepth = globeDepth;
   this.globeTranslucencyFramebuffer = new GlobeTranslucencyFramebuffer();
   this.oit = oit;
@@ -412,6 +416,8 @@ View.prototype.destroy = function () {
     this.pickDepthFramebuffer && this.pickDepthFramebuffer.destroy();
   this.sceneFramebuffer =
     this.sceneFramebuffer && this.sceneFramebuffer.destroy();
+  this.sceneTextures = this.sceneTextures && this.sceneTextures.destroy();
+  this.skyCapture = this.skyCapture && this.skyCapture.destroy();
   this.globeDepth = this.globeDepth && this.globeDepth.destroy();
   this.oit = this.oit && this.oit.destroy();
   this.translucentTileClassification =

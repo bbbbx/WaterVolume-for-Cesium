@@ -16,6 +16,7 @@ import DeveloperError from "../Core/DeveloperError.js";
 import Ellipsoid from "../Core/Ellipsoid.js";
 import EllipsoidGeometry from "../Core/EllipsoidGeometry.js";
 import Event from "../Core/Event.js";
+import getTimestamp from "../Core/getTimestamp.js";
 import GeographicProjection from "../Core/GeographicProjection.js";
 import GeometryInstance from "../Core/GeometryInstance.js";
 import GeometryPipeline from "../Core/GeometryPipeline.js";
@@ -1915,6 +1916,7 @@ function updateFrameNumber(scene, frameNumber, time) {
   const frameState = scene._frameState;
   frameState.frameNumber = frameNumber;
   frameState.time = JulianDate.clone(time, frameState.time);
+  frameState.timeSinceSceneLoad = getTimestamp() * 1.0e-3;
 }
 
 /**
@@ -2312,6 +2314,184 @@ function executeVoxelCommands(scene, executeFunction, passState, commands) {
   }
 }
 
+
+function executeWaterVolumeCommands(scene, frustumCommands, passState) {
+  const view = scene._view;
+  const globeDepth = view.globeDepth;
+  if (!defined(globeDepth)) {
+    return;
+  }
+
+  const frameState = scene._frameState;
+  if (frameState.passes.pick || frameState.passes.depth) {
+    return;
+  }
+
+  const context = scene.context;
+  const us = context.uniformState;
+  let commands, length, j;
+
+  // console.assert(passState.framebuffer === globeDepth.colorFramebufferManager.framebuffer);
+  globeDepth.prepareColorTextures(context);
+  const globeDepthResolveSrcFramebuffer =
+    scene.msaaSamples > 1
+      ? globeDepth._outputFramebuffer._multisampleFramebuffer.getRenderFramebuffer()
+      : globeDepth._outputFramebuffer._framebuffer;
+  const globeDepthResolveDstFramebuffer =
+    scene.msaaSamples > 1
+      ? globeDepth._outputFramebuffer._multisampleFramebuffer.getColorFramebuffer()
+      : globeDepth._outputFramebuffer._framebuffer;
+  // if (!globeDepthResolveDstFramebuffer) debugger;
+  const colorTexture = globeDepthResolveDstFramebuffer.getColorTexture(0);
+  const depthStencilTexture =
+    globeDepthResolveDstFramebuffer.depthStencilTexture;
+
+  const colorRenderbuffer =
+    scene.msaaSamples > 1
+      ? globeDepthResolveSrcFramebuffer.getColorRenderbuffer(0)
+      : null;
+
+  const sceneTextures = view.sceneTextures;
+  sceneTextures.update(
+    context,
+    passState,
+    view.viewport,
+    scene.msaaSamples,
+    scene._hdr,
+    colorTexture,
+    colorRenderbuffer
+  );
+  {
+    const originalFB = passState.framebuffer;
+    passState.framebuffer = sceneTextures.globeAndOpaqueColorFramebuffer;
+    // 拷贝 globeDepth.colorFramebufferManager.getColorTexture()
+    globeDepth.executeCopyColor(context, passState);
+    // sceneTextures.globeAndOpaqueColorFramebuffer.getColorTexture(0).generateMipmap();
+    passState.framebuffer = originalFB;
+
+    context.uniformState.globeAndOpaqueColorTexture = sceneTextures.globeAndOpaqueColorFramebuffer.getColorTexture(
+      0
+    );
+  }
+  // 拷贝 globeDepth.depthStencilTexture
+  {
+    const originalFB = globeDepth._copyDepthCommand.framebuffer;
+    globeDepth._copyDepthCommand.framebuffer =
+      sceneTextures.globeAndOpaquePackedDepthFramebuffer;
+    // 打包 globeDepth.colorFramebufferManager.getDepthStencilTexture() 到 rgba
+    globeDepth.executeCopyDepth(context, passState);
+    globeDepth._copyDepthCommand.framebuffer = originalFB;
+
+    context.uniformState.globeAndOpaquePackedDepthTexture = sceneTextures.globeAndOpaquePackedDepthFramebuffer.getColorTexture(
+      0
+    );
+  }
+
+  // 拷贝 depthStencilTexture 到 front&back&volume framebuffer
+  sceneTextures.copySceneDepthTexture(context, depthStencilTexture);
+
+  if (sceneTextures.debugMode) {
+    scene._overlayCommandList.push(sceneTextures.createDebugCommand(context));
+  }
+
+  // 前面和背面的深度 pass
+  {
+    const originalFramebuffer = passState.framebuffer;
+    const originalDepthPass = frameState.passes.depth;
+
+    // 只需要深度
+    frameState.passes.depth = true;
+
+    passState.framebuffer = sceneTextures.waterVolumesFrontFaceFramebuffer;
+    commands = frustumCommands.commands[Pass.WATER_VOLUME_FRONT_FACE_DEPTH];
+    length = frustumCommands.indices[Pass.WATER_VOLUME_FRONT_FACE_DEPTH];
+    for (j = 0; j < length; ++j) {
+      executeCommand(commands[j], scene, context, passState);
+    }
+
+    passState.framebuffer = sceneTextures.waterVolumesBackFaceFramebuffer;
+    commands = frustumCommands.commands[Pass.WATER_VOLUME_BACK_FACE_DEPTH];
+    length = frustumCommands.indices[Pass.WATER_VOLUME_BACK_FACE_DEPTH];
+    for (j = 0; j < length; ++j) {
+      executeCommand(commands[j], scene, context, passState);
+    }
+
+    frameState.passes.depth = originalDepthPass;
+    passState.framebuffer = originalFramebuffer;
+
+    context.uniformState.waterVolumesFrontFaceDepthTexture =
+      sceneTextures.waterVolumesFrontFaceFramebuffer.depthTexture;
+    context.uniformState.waterVolumesBackFaceDepthTexture =
+      sceneTextures.waterVolumesBackFaceFramebuffer.depthTexture;
+  }
+
+  // 水底 Pass
+  {
+    const originalFB = passState.framebuffer;
+    passState.framebuffer = sceneTextures.waterVolumesFramebuffer;
+    us.updatePass(Pass.WATER_VOLUME_UNDER_WATER);
+    commands = frustumCommands.commands[Pass.WATER_VOLUME_UNDER_WATER];
+    length = frustumCommands.indices[Pass.WATER_VOLUME_UNDER_WATER];
+    if (length > 0) {
+      const clearStencil = scene._stencilClearCommand;
+      clearStencil.execute(context, passState);
+    }
+    for (j = 0; j < length; ++j) {
+      executeCommand(commands[j], scene, context, passState);
+    }
+    passState.framebuffer = originalFB;
+  }
+
+  // 拷贝 under water 的结果到 sceneColor
+  if (length > 0) {
+    globeDepth.prepareColorTextures(context);
+
+    const originalFB = passState.framebuffer;
+    passState.framebuffer = sceneTextures.globeAndOpaqueColorFramebuffer;
+    globeDepth.executeCopyColor(context, passState);
+    context.uniformState.globeAndOpaqueColorTexture = sceneTextures.globeAndOpaqueColorFramebuffer.getColorTexture(
+      0
+    );
+    // sceneTextures.globeAndOpaqueColorFramebuffer.getColorTexture(0).generateMipmap();
+    passState.framebuffer = originalFB;
+  }
+
+  // 水体边界 Pass
+  {
+    // FIXME: debug only
+    // const gl = context._gl;
+    // if (window.debugWireframe && context._polygon_mode) {
+    //   context._polygon_mode.polygonModeWEBGL(gl.FRONT_AND_BACK, context._polygon_mode.LINE_WEBGL);
+    // }
+
+    const originalFB = passState.framebuffer;
+    passState.framebuffer = sceneTextures.waterVolumesFramebuffer;
+    us.updatePass(Pass.WATER_VOLUME_BOUNDARY);
+    commands = frustumCommands.commands[Pass.WATER_VOLUME_BOUNDARY];
+    length = frustumCommands.indices[Pass.WATER_VOLUME_BOUNDARY];
+    for (j = 0; j < length; ++j) {
+      executeCommand(commands[j], scene, context, passState);
+    }
+    passState.framebuffer = originalFB;
+
+    // FIXME: debug only
+    // if (window.debugWireframe && context._polygon_mode) {
+    //   context._polygon_mode.polygonModeWEBGL(gl.FRONT_AND_BACK, context._polygon_mode.FILL_WEBGL);
+    // }
+
+    // 拷贝 water volume 的结果到 sceneColor，后续有需要则可以取消注释
+    // if (length > 0) {
+    //   globeDepth.prepareColorTextures(context);
+
+    //   const originalFB = passState.framebuffer;
+    //   passState.framebuffer = sceneTextures.globeAndOpaqueColorFramebuffer;
+    //   globeDepth.executeCopyColor(context, passState);
+    //   context.uniformState.globeAndOpaqueColorTexture = sceneTextures.globeAndOpaqueColorFramebuffer.getColorTexture(0);
+    //   passState.framebuffer = originalFB;
+    // }
+  }
+}
+
 const scratchPerspectiveFrustum = new PerspectiveFrustum();
 const scratchPerspectiveOffCenterFrustum = new PerspectiveOffCenterFrustum();
 const scratchOrthographicFrustum = new OrthographicFrustum();
@@ -2320,6 +2500,14 @@ const scratchOrthographicOffCenterFrustum = new OrthographicOffCenterFrustum();
 function executeCommands(scene, passState) {
   const { camera, context, frameState } = scene;
   const { uniformState } = context;
+
+  if (!frameState.passes.pick && !frameState.passes.depth) {
+    const view = scene._view;
+    if (defined(view.skyCapture)) {
+      view.skyCapture.update(frameState);
+      view.skyCapture.executeSkyCapture(scene);
+    }
+  }
 
   uniformState.updateCamera(camera);
 
@@ -2666,6 +2854,8 @@ function executeCommands(scene, passState) {
       frustum.near = frustumCommands.near;
       uniformState.updateFrustum(frustum);
     }
+
+    executeWaterVolumeCommands(scene, frustumCommands, passState);
 
     let invertClassification;
     if (
@@ -3442,6 +3632,9 @@ function updateAndClearFramebuffers(scene, passState, clearColor) {
   const picking = passes.pick || passes.pickVoxel;
   if (defined(view.globeDepth)) {
     view.globeDepth.picking = picking;
+  }
+  if (defined(view.sceneTextures)) {
+    view.sceneTextures.picking = picking;
   }
   const useWebVR = environmentState.useWebVR;
 

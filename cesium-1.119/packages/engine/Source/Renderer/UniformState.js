@@ -26,6 +26,15 @@ function UniformState() {
    * @type {Texture}
    */
   this.globeDepthTexture = undefined;
+
+  /** @type {Texture} */
+  this.globeAndOpaqueColorTexture = undefined;
+  this.globeAndOpaquePackedDepthTexture = undefined;
+  this.waterVolumesFrontFaceDepthTexture = undefined;
+  this.waterVolumesBackFaceDepthTexture = undefined;
+  /** @type {CubeMap} */
+  this.skyCaptureCubeMap = undefined;
+
   /**
    * @type {number}
    */

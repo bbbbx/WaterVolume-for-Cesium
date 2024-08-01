@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no"
+    />
+    <meta
+      name="description"
+      content="WaterVolume demo"
+    />
+    <meta name="cesium-sandcastle-labels" content="Beginner, Showcases" />
+    <title>Cesium Demo</title>
+    <script type="text/javascript" src="../Sandcastle-header.js"></script>
+    <script type="module" src="../load-cesium-es6.js"></script>
+  </head>
+  <body
+    class="sandcastle-loading"
+    data-sandcastle-bucket="bucket-requirejs.html"
+  >
+    <style>
+      @import url(../templates/bucket.css);
+
+      #toolbar {
+        background: rgba(42, 42, 42, 0.8);
+        padding: 4px;
+        border-radius: 4px;
+      }
+
+      #toolbar input {
+        vertical-align: middle;
+        padding-top: 2px;
+        padding-bottom: 2px;
+      }
+
+      #toolbar .header {
+        font-weight: bold;
+      }
+    </style>
+    <div id="cesiumContainer" class="fullSize"></div>
+    <div id="loadingOverlay">
+      <h1>Loading...</h1>
+    </div>
+    <div id="toolbar">
+      <table>
+        <tbody>
+          <tr>
+            <td>show</td>
+            <td>
+              <input type="checkbox" data-bind="checked: show"
+              />
+            </td>
+          </tr>
+          <tr>
+            <td>topHeightOffset</td>
+            <td>
+              <input type="range" min="-30" max="30" step="0.1" data-bind="value: topHeightOffset, valueUpdate: 'input'"
+              />
+              <input type="text" size="5" data-bind="value: topHeightOffset" />
+            </td>
+          </tr>
+
+          <tr>
+            <td>causticDistance</td>
+            <td>
+              <input type="range" min="1" max="30" step="0.1" data-bind="value: causticDistance, valueUpdate: 'input'"
+              />
+              <input type="text" size="5" data-bind="value: causticDistance" />
+            </td>
+          </tr>
+
+          <tr>
+            <td>underWaterVisibilityDistance</td>
+            <td>
+              <input type="range" min="1" max="100" step="0.1" data-bind="value: underWaterVisibilityDistance, valueUpdate: 'input'"
+              />
+              <input type="text" size="5" data-bind="value: underWaterVisibilityDistance" />
+            </td>
+          </tr>
+
+          <tr>
+            <td>underWaterEnabled</td>
+            <td>
+              <input type="checkbox" data-bind="checked: underWaterEnabled"
+              />
+            </td>
+          </tr>
+
+          <tr>
+            <td>waveLength</td>
+            <td>
+              <input type="range" min="3" max="20" step="0.1" data-bind="value: waveLength, valueUpdate: 'input'"
+              />
+              <input type="text" size="5" data-bind="value: waveLength" />
+            </td>
+          </tr>
+
+          <tr>
+            <td>waveAmplitude</td>
+            <td>
+              <input type="range" min="0.01" max="5" step="0.01" data-bind="value: waveAmplitude, valueUpdate: 'input'"
+              />
+              <input type="text" size="5" data-bind="value: waveAmplitude" />
+            </td>
+          </tr>
+
+          <tr>
+            <td>waveDirection</td>
+            <td>
+              <input type="range" min="0" max="360" step="1" data-bind="value: waveDirection, valueUpdate: 'input'"
+              />
+              <input type="text" size="5" data-bind="value: waveDirection" />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <script id="cesium_sandcastle_script">
+      window.startup = async function (Cesium) {
+        "use strict";
+        //Sandcastle_Begin
+        const viewer = new Cesium.Viewer("cesiumContainer", {
+          timeline: false,
+          animation: false,
+          sceneModePicker: false,
+          baseLayerPicker: false,
+          terrain: Cesium.Terrain.fromWorldTerrain(),
+        });
+        viewer.scene.globe.depthTestAgainstTerrain = true;
+
+
+        Cesium.Cesium3DTileset.fromIonAssetId(40866).then(tileset => {
+          viewer.scene.primitives.add(tileset);
+          viewer.flyTo(tileset);
+
+          const destination = tileset.boundingSphere.center;
+
+          const centerPos = destination;
+          const transform = Cesium.Transforms.eastNorthUpToFixedFrame(centerPos, viewer.scene.globe.ellipsoid);
+
+          const radius = tileset.boundingSphere.radius * 1;
+          const northeastPos = Cesium.Matrix4.multiplyByPoint(transform, new Cesium.Cartesian3(radius, radius, 0), new Cesium.Cartesian3());
+          const southeastPos = Cesium.Matrix4.multiplyByPoint(transform, new Cesium.Cartesian3(radius, -radius, 0), new Cesium.Cartesian3());
+          const southwestPos = Cesium.Matrix4.multiplyByPoint(transform, new Cesium.Cartesian3(-radius, -radius, 0), new Cesium.Cartesian3());
+          const northwestPos = Cesium.Matrix4.multiplyByPoint(transform, new Cesium.Cartesian3(-radius, radius, 0), new Cesium.Cartesian3());
+
+          const polygonPositions = [
+            northeastPos,
+            southeastPos,
+            southwestPos,
+            northwestPos,
+          ];
+          const holes = [];
+          const waterVolume = new Cesium.WaterVolume({
+            polygonHierarchy: new Cesium.PolygonHierarchy(polygonPositions, holes),
+            topHeight: 85,
+            bottomHeight: -100.0,
+          });
+          viewer.scene.primitives.add(waterVolume);
+
+
+          const viewModel = {
+            show: waterVolume.show,
+            topHeightOffset: waterVolume.topHeightOffset,
+            causticDistance: waterVolume.causticDistance,
+            underWaterEnabled: waterVolume.underWaterEnabled,
+            underWaterVisibilityDistance: waterVolume.underWaterVisibilityDistance,
+            waveAmplitude: waterVolume.waveAmplitude,
+            waveDirection: waterVolume.waveDirection,
+            waveLength: waterVolume.waveLength,
+          };
+
+          function updateWaterVolume() {
+            waterVolume.show = Boolean(viewModel.show);
+            waterVolume.topHeightOffset = Number(viewModel.topHeightOffset);
+            waterVolume.causticDistance = Number(viewModel.causticDistance);
+            waterVolume.underWaterEnabled = Boolean(viewModel.underWaterEnabled);
+            waterVolume.underWaterVisibilityDistance = Number(viewModel.underWaterVisibilityDistance);
+            waterVolume.waveAmplitude = Number(viewModel.waveAmplitude);
+            waterVolume.waveDirection = Number(viewModel.waveDirection);
+            waterVolume.waveLength = Number(viewModel.waveLength);
+          }
+
+          Cesium.knockout.track(viewModel);
+          const toolbar = document.getElementById("toolbar");
+          Cesium.knockout.applyBindings(viewModel, toolbar);
+          for (const name in viewModel) {
+            if (viewModel.hasOwnProperty(name)) {
+              Cesium.knockout
+                .getObservable(viewModel, name)
+                .subscribe(updateWaterVolume);
+            }
+          }
+        });
+
+        //Sandcastle_End
+        Sandcastle.finishedLoading();
+      };
+      if (typeof Cesium !== "undefined") {
+        window.startupCalled = true;
+        window.startup(Cesium).catch((error) => {
+          "use strict";
+          console.error(error);
+        });
+      }
+    </script>
+  </body>
+</html>

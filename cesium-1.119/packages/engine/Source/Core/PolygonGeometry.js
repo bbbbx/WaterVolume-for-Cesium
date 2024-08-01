@@ -44,6 +44,7 @@ function adjustPosHeightsForNormal(position, p1, p2, ellipsoid) {
 const scratchBoundingRectangle = new BoundingRectangle();
 const scratchPosition = new Cartesian3();
 const scratchNormal = new Cartesian3();
+const scratchExtrudeNormal = new Cartesian3();
 const scratchTangent = new Cartesian3();
 const scratchBitangent = new Cartesian3();
 const p1Scratch = new Cartesian3();
@@ -115,6 +116,7 @@ function computeAttributes(options) {
     let attrIndex = 0;
 
     let normal = scratchNormal;
+    let extrudeNormal = scratchExtrudeNormal;
     let tangent = scratchTangent;
     let bitangent = scratchBitangent;
     let recomputeNormal = true;
@@ -302,12 +304,13 @@ function computeAttributes(options) {
         }
 
         if (shadowVolume) {
-          if (wall) {
-            normal = ellipsoid.geodeticSurfaceNormal(position, normal);
-          }
-          extrudeNormals[attrIndex + bottomOffset] = -normal.x;
-          extrudeNormals[attrIndex1 + bottomOffset] = -normal.y;
-          extrudeNormals[attrIndex2 + bottomOffset] = -normal.z;
+          extrudeNormal = ellipsoid.geodeticSurfaceNormal(
+            position,
+            extrudeNormal
+          );
+          extrudeNormals[attrIndex + bottomOffset] = -extrudeNormal.x;
+          extrudeNormals[attrIndex1 + bottomOffset] = -extrudeNormal.y;
+          extrudeNormals[attrIndex2 + bottomOffset] = -extrudeNormal.z;
         }
 
         if (vertexFormat.tangent) {
