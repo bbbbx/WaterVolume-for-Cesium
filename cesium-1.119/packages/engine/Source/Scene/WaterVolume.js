@@ -113,6 +113,7 @@ const trilinearClampSampler = new Sampler({
  * @param {number} options.topHeight 定义水体顶部的高度
  * @param {number} [options.bottomHeight=0.0] 定义水体底部的高度
  * @param {boolean} [options.geometryWavesEnabled=true] 是否启用水体顶部几何的水波模拟。当水体顶部面积大于 1 平方千米时，为了性能，会强制不开启。
+ * @param {boolean} [options.allowPicking=true] When <code>true</code>, each geometry instance will only be pickable with {@link Scene#pick}.  When <code>false</code>, GPU memory is saved.
  *
  * @exception {DeveloperError} options.polygonHierarchy 是必需的。
  * @exception {DeveloperError} options.polygonHierarchy 的 position 的长度必须大于或等于 3。
@@ -178,6 +179,8 @@ function WaterVolume(options) {
    * @default true
    */
   this.show = true;
+
+  this._allowPicking = defaultValue(options.allowPicking, true);
 
   this._geometryWavesEnabled = geometryWavesEnabled;
 
@@ -304,6 +307,32 @@ function WaterVolume(options) {
 }
 
 Object.defineProperties(WaterVolume.prototype, {
+  /**
+   * When <code>true</code>, each geometry instance will only be pickable with {@link Scene#pick}.  When <code>false</code>, GPU memory is saved.
+   *
+   * @memberof WaterVolume.prototype
+   *
+   * @type {boolean}
+   * @readonly
+   *
+   * @default true
+   */
+  allowPicking: {
+    get: function () {
+      return this._allowPicking;
+    },
+  },
+
+  /**
+   * 用于 PostProcessStage 的 createSelectedTexture 函数
+   * @private
+   */
+  pickIds: {
+    get: function () {
+      return defined(this._primitive) ? this._primitive._pickIds : undefined;
+    },
+  },
+
   /**
    * 定义水体多边形和它的洞
    *
@@ -632,6 +661,23 @@ function getUnderWaterAppearance(wavesLength) {
   });
 }
 
+function appendPickToVertexShader(source) {
+  const renamedVS = ShaderSource.replaceMain(source, "czm_non_pick_main");
+  const pickMain =
+    "out vec4 v_pickColor; \n" +
+    "void main() \n" +
+    "{ \n" +
+    "    czm_non_pick_main(); \n" +
+    "    v_pickColor = czm_batchTable_pickColor(batchId); \n" +
+    "}";
+
+  return `${renamedVS}\n${pickMain}`;
+}
+
+function appendPickToFragmentShader(source) {
+  return `in vec4 v_pickColor;\n${source}`;
+}
+
 function createWaterVolumeShaderProgram(
   waterVolume,
   primitive,
@@ -651,6 +697,7 @@ function createWaterVolumeShaderProgram(
     primitive,
     waterBoundaryVS
   );
+  waterBoundaryVS = appendPickToVertexShader(waterBoundaryVS);
   waterBoundaryVS = Primitive._modifyShaderPosition(
     primitive,
     waterBoundaryVS,
@@ -671,9 +718,12 @@ function createWaterVolumeShaderProgram(
     defines: [/*extrudedDefine*/ isFineGranularity ? "FineGranularity" : ""],
     sources: [waterBoundaryVS],
   });
+
+  let waterBoundaryFS = appearance.fragmentShaderSource;
+  waterBoundaryFS = appendPickToFragmentShader(waterBoundaryFS);
   const waterBoundaryFSSource = new ShaderSource({
     defines: [isFineGranularity ? "FineGranularity" : ""],
-    sources: [appearance.fragmentShaderSource],
+    sources: [waterBoundaryFS],
   });
 
   const attributeLocations = primitive._attributeLocations;
@@ -905,6 +955,8 @@ WaterVolume.prototype.update = function (frameState) {
       frameState,
       cellSize
     );
+    // 使得 scene.pick 拾取到的是 WaterVolume，而不是 Cesium.Primitive
+    this._geometryInstance.pickPrimitive = this;
 
     // 同步地创建顶点属性已经非常耗时了，不用异步的原因是我们还需要对 Cesium 创建的顶点属性进行修改
     // 下一帧再渲染
@@ -1176,6 +1228,27 @@ WaterVolume.prototype.update = function (frameState) {
               debugShowBoundingVolume
             );
           }
+        } else if (frameState.passes.pick) {
+          const i = 4;
+          boundingVolume = boundingVolumes[Math.floor(i / 5)];
+          command = colorCommands[i];
+
+          if (waterVolume.allowPicking) {
+            command.pickId = "v_pickColor";
+          } else {
+            command.pickId = undefined;
+          }
+
+          // updateAndQueuePickCommand
+          updateAndQueueRenderCommand(
+            waterVolume,
+            command,
+            frameState,
+            modelMatrix,
+            cull,
+            boundingVolume,
+            debugShowBoundingVolume
+          );
         }
       },
     });

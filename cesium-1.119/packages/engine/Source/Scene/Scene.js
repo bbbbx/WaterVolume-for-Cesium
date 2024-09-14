@@ -2323,13 +2323,30 @@ function executeWaterVolumeCommands(scene, frustumCommands, passState) {
   }
 
   const frameState = scene._frameState;
-  if (frameState.passes.pick || frameState.passes.depth) {
+  if (frameState.passes.depth) {
+    return;
+  }
+
+  // 没有水体则不直接返回，且 sceneTextures 也会不执行，
+  // 如果其他非水体的功能需要使用，则还需要修改这里。
+  // 水体总是有 WATER_VOLUME_BOUNDARY pass，所以用一个判断就可以了。
+  if (frustumCommands.indices[Pass.WATER_VOLUME_BOUNDARY] === 0) {
     return;
   }
 
   const context = scene.context;
   const us = context.uniformState;
   let commands, length, j;
+
+  if (frameState.passes.pick) {
+    us.updatePass(Pass.WATER_VOLUME_BOUNDARY);
+    commands = frustumCommands.commands[Pass.WATER_VOLUME_BOUNDARY];
+    length = frustumCommands.indices[Pass.WATER_VOLUME_BOUNDARY];
+    for (j = 0; j < length; ++j) {
+      executeCommand(commands[j], scene, context, passState);
+    }
+    return;
+  }
 
   // console.assert(passState.framebuffer === globeDepth.colorFramebufferManager.framebuffer);
   globeDepth.prepareColorTextures(context);
@@ -2967,6 +2984,14 @@ function executeCommands(scene, passState) {
     uniformState.updatePass(Pass.OPAQUE);
     commands = frustumCommands.commands[Pass.OPAQUE];
     length = frustumCommands.indices[Pass.OPAQUE];
+    for (j = 0; j < length; ++j) {
+      executeIdCommand(commands[j], scene, context, passState);
+    }
+
+    // 使后处理中的 czm_idTexture 可获取到水体
+    us.updatePass(Pass.WATER_VOLUME_BOUNDARY);
+    commands = frustumCommands.commands[Pass.WATER_VOLUME_BOUNDARY];
+    length = frustumCommands.indices[Pass.WATER_VOLUME_BOUNDARY];
     for (j = 0; j < length; ++j) {
       executeIdCommand(commands[j], scene, context, passState);
     }
